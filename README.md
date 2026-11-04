@@ -13,8 +13,11 @@ _✨ 正版与多种外置登录共存 ✨_
 </div>
 
 > [!CAUTION]
-> 🚧 本项目已停止维护, 因维护与问题修复成本过高, 不再建议继续使用.  
-> 可加入QQ交流群了解详细内幕和获取同类型需求的解决方案.
+> 🚧 上游**已停止维护** (CaaMoe/MultiLogin)，官方不再建议继续使用。
+>
+> **本仓库是一次内部维护性移植**：已修复上游插件在 **Velocity 3.5.x / 4.3.1** 上
+> 因反射锚点失效而无法接管登录的问题，并补齐了可复现的构建链与端到端验证工具。
+> 改动明细、构建方法、验证方式与后续升级注意事项见 [PORTING.md](PORTING.md)。
 
 ## 概述
 
@@ -44,15 +47,32 @@ MultiLogin 是一款主要为 Minecraft 代理端设计的插件，旨在实现�
 
 ## 构建
 
-1. 克隆这个项目
-2. 执行 `./gradlew shadowJar` / `gradlew shadowJar`
-3. 在 `*/build/libs` 下寻找你需要的
+需要 **JDK 21+**；如果目标是 **Velocity 4.x**，必须用 **JDK 25**
+（Velocity 4 本体就是 Java 25 字节码）。
 
-或者你也可以
+```bash
+# 目标 Velocity 3.5.x
+./gradlew clean shadowJar -Pvelocity_version=3.5.1 -Penv=final
 
-1. [Fork](https://github.com/CaaMoe/MultiLogin/fork) 此项目
-2. 开启 Actions
-3. 随便提交一个文件
+# 目标 Velocity 4.3.1（JDK 25）
+./gradlew clean shadowJar -Pvelocity_version=4.3.1 -Penv=final
+```
+
+产物在 `velocity/build/libs/MultiLogin-Velocity-<version>.jar`。
+
+首次构建会自动从 `fill.papermc.io` 下载目标版本的 Velocity 发行包到 `libs/`
+（上游依赖的 `velocity-proxy` 已经不再发布到 maven 仓库，详见 [PORTING.md](PORTING.md)）。
+
+## 验证
+
+`testkit/` 提供了一套协议级端到端自测（假 Yggdrasil + 真实 Velocity + 模拟客户端登录）：
+
+```powershell
+javac -encoding UTF-8 -d testkit\classes testkit\FakeYggdrasil.java testkit\LoginProbe.java
+.\testkit\run-e2e.ps1 -Jar .\dist\MultiLogin-Velocity-3.5.1.jar -ServerDir .\run\velocity-3.5.1
+```
+
+详见 [PORTING.md](PORTING.md)。
 
 ## BUG 汇报
 
