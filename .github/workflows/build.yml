@@ -1,0 +1,73 @@
+name: Java CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      force-update:
+        description: 'Force Flush Velocity Library Cache'
+        required: false
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: 21
+          cache: 'gradle'
+
+      - name: Patch Gradle Repositories
+        run:
+          sed -ni '/https:\/\/maven.aliyun.com\/repository\/public/{h;n;/https:\/\/repo1.maven.org\/maven2/!{:a;N;/https:\/\/maven.aliyun.com\/repository\/public/!ba;x;H;n};x;H;x};p' repositories
+
+      - name: Preprocessing Check
+        id: check
+        run: |
+          if [[ `git diff --name-only HEAD^ HEAD latest` ]]; then
+            sed -i "s/plugin_version=[0-9.]*$/plugin_version=`cat latest`/g" gradle.properties
+            echo "release=true" >> $GITHUB_ENV;
+            echo "version=`cat latest`" >> $GITHUB_ENV;
+          else
+            echo "release=false" >> $GITHUB_ENV;
+          fi
+
+      - name: Build Dev
+        if: env.release == 'false'
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: current
+          arguments: ShadowJar
+
+      - name: Build Release
+        if: env.release == 'true'
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: current
+          arguments: ShadowJar -Denv=final
+
+      - name: Cleanup Gradle Cache
+        run: |
+          rm -f ~/.gradle/caches/modules-2/modules-2.lock
+          rm -f ~/.gradle/caches/modules-2/gc.properties
+
+      - name: Publish Release
+        if: env.release == 'true'
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "v${{ env.version }}"
+          draft: false
+          prerelease: false
+          title: "MultiLogin v${{ env.version }}"
+          files: |
+            velocity/build/libs/MultiLogin-Velocity-${{ env.version }}.jar

@@ -1,0 +1,99 @@
+plugins {
+    id 'com.gradleup.shadow' version '9.1.0'
+}
+
+repositories {
+    maven {
+        name 'papermc'
+        url 'https://repo.papermc.io/repository/maven-public/'
+    }
+    mavenCentral()
+    maven { url = 'https://maven.elytrium.net/repo/' }
+}
+
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+dependencies {
+    implementation project(":api")
+    implementation project(":flows")
+    implementation project(":loader")
+
+    compileOnly 'io.netty:netty-all:4.1.86.Final'
+    compileOnly 'net.minecrell:terminalconsoleappender:1.3.0'
+    compileOnly 'com.velocitypowered:velocity-api:3.4.0-SNAPSHOT'
+    compileOnly 'com.velocitypowered:velocity-proxy:3.4.0-SNAPSHOT'
+}
+
+
+shadowJar {
+    archiveBaseName.set('MultiLogin-Velocity')
+
+    if (System.getProperty("env", "AUTO") == "final") {
+        archiveVersion.set(project.plugin_version as String)
+    } else {
+        String ver = "Build_" + version
+        archiveVersion.set(ver)
+    }
+    archiveClassifier.set("")
+    from {
+        project(':core').tasks.shadowJar.archiveFile
+    }
+    from {
+        project(':velocity:injector').tasks.shadowJar.archiveFile
+    }
+}
+
+def buildRoot = "${projectDir}/libraries/Velocity"
+
+tasks.register('cloneVelocity') {
+    if (file(buildRoot).exists()) {
+        println "External library repo already exists. Upgrading."
+        exec {
+            workingDir = file(buildRoot)
+            commandLine "git", "pull"
+        }
+    } else {
+        println "Cloning Velocity repository..."
+        exec {
+            commandLine "git", "clone", "--depth", "1", "https://github.com/PaperMC/Velocity", buildRoot
+        }
+    }
+}
+
+tasks.register('buildVelocity', Exec) {
+    dependsOn 'cloneVelocity'
+    doFirst {
+        def currentJavaVersion = JavaVersion.current()
+        if (currentJavaVersion.isJava8()) {
+            throw new GradleException("This build requires at least Java 11. You are using Java ${currentJavaVersion}. Please update your Java version.")
+        }
+        environment "JAVA_HOME", System.getProperty("java.home")
+        workingDir = file("${buildRoot}")
+    }
+    def gradlewCmd = System.getProperty('os.name').toLowerCase().contains('win') ? "gradlew.bat" : "./gradlew"
+    commandLine "${buildRoot}/${gradlewCmd}", "build", "--no-daemon", "--parallel"
+    doLast {
+        println "Velocity has been built."
+    }
+}
+
+tasks.register('getLatestVelocity', Copy) {
+    dependsOn 'buildVelocity'
+    println "Copying build artifacts..."
+    from("${buildRoot}/proxy/build/libs") {
+        include "velocity-proxy-*-SNAPSHOT.jar"
+    }
+    from("${buildRoot}/api/build/libs") {
+        include "velocity-api-*-SNAPSHOT.jar"
+    }
+    into "${buildRoot}/.."
+    println "Artifacts copied successfully."
+}
+
+artifacts {
+    archives shadowJar
+}

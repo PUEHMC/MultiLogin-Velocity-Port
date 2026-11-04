@@ -1,0 +1,112 @@
+import groovy.json.JsonOutput
+import org.apache.tools.ant.filters.ReplaceTokens
+import java.text.SimpleDateFormat
+
+
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '1.8.0' apply false
+}
+
+apply from: './constant.gradle'
+
+allprojects {
+    apply plugin: "java"
+    def getGitCommitId = { ->
+        try {
+            def proc = "git rev-parse --short HEAD".execute()
+            proc.waitFor()
+            if (proc.exitValue() == 0) {
+                return proc.in.text.trim()
+            } else {
+                return "unknown"
+            }
+        } catch (Exception e) {
+            return "unknown"
+        }
+    }
+    ext.gitCommitId = getGitCommitId()
+    version = "${gitCommitId}"
+}
+
+subprojects {
+    repositories {
+        try (def scanner = new Scanner(file.repositories as File)) {
+            while (scanner.hasNextLine()) {
+                def line = scanner.nextLine()
+                if (line.trim().length() == 0 || (line.charAt(0) as String) == '#') continue
+                maven {
+                    url line
+                }
+            }
+        }
+    }
+
+    dependencies {
+        compileOnly group: 'org.projectlombok', name: 'lombok', version: '1.18.38'
+        annotationProcessor group: 'org.projectlombok', name: 'lombok', version: '1.18.38'
+
+        compileOnly("org.jetbrains:annotations:24.1.0")
+        annotationProcessor("org.jetbrains:annotations:24.1.0")
+
+        try (def scanner = new Scanner(file.libraries as File)) {
+            while (scanner.hasNextLine()) {
+                def line = scanner.nextLine()
+                if (line.trim().length() == 0 || (line.charAt(0) as String) == '#') continue
+                def args = line.split("\\s+")
+                compileOnly group: args[0], name: args[1], version: args[2]
+            }
+        }
+    }
+
+    processResources {
+        setDuplicatesStrategy(DuplicatesStrategy.EXCLUDE)
+
+        def contributors = new HashSet<String>()
+        try (def scanner = new Scanner(file.contributors as File)) {
+            while (scanner.hasNextLine()) {
+                def line = scanner.nextLine()
+                if (line.trim().length() == 0 || (line.charAt(0) as String) == '#') continue
+                contributors.add(line)
+            }
+        }
+
+        def ver;
+        def env = System.getProperty("env", "AUTO").toLowerCase()
+        if (env == "final") {
+            ver = (project.plugin_version as String)
+        } else {
+            ver = "Build_" + version
+        }
+
+        filter ReplaceTokens, tokens: [
+                "contributors_json": JsonOutput.toJson(contributors),
+                "contributors"     : contributors.join(", "),
+                "version"          : ver,
+                "build_type"       : env,
+                "build_timestamp"  : System.currentTimeMillis() as String
+        ]
+    }
+
+    jar {
+        manifest {
+            attributes(
+                    'Built-By'       : System.properties['user.name'],
+                    'Build-Timestamp': new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").format(new Date()),
+                    'Build-Revision' : gitCommitId,
+                    'Created-By'     : "Gradle ${gradle.gradleVersion}",
+                    'Build-Jdk'      : "${System.properties['java.version']} (${System.properties['java.vendor']} ${System.properties['java.vm.version']})",
+                    'Build-OS'       : "${System.properties['os.name']} ${System.properties['os.arch']} ${System.properties['os.version']}"
+            )
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = "UTF-8"
+        file.encoding = "UTF-8"
+    }
+
+    compileJava {
+        sourceCompatibility = targetCompatibility = JavaVersion.VERSION_21
+    }
+}
+

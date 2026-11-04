@@ -1,0 +1,8 @@
+ext {
+    file = [
+            digests     : new File(getRootDir(), ".digests"),
+            libraries   : new File(getRootDir(), "libraries"),
+            repositories: new File(getRootDir(), "repositories"),
+            contributors: new File(getRootDir(), "contributors")
+    ]
+}
