@@ -217,6 +217,24 @@ java -jar velocity.jar
 > 已经发出来了，上面这行日志一定会有。想完整走一遍就用测试工具:
 > `./testkit/run-e2e.sh --jar dist/MultiLogin-Velocity-3.5.1.jar --server-dir /opt/mltest`
 
+### 生产实例验证记录（2026-11-04）
+
+真实生产环境，配置为 LittleSkin(sid 1) + Official(sid 2) + Floodgate 2.2.4 + MySQL，
+逐项验收通过:
+
+| 检查项 | 证据 |
+|---|---|
+| 插件加载 / 注入绑定 | `Loaded, using MultiLogin v0.6.13 on Velocity - 3.5.0-SNAPSHOT (git-a7581821-b605)`，之后无异常、无 DISABLED |
+| Floodgate 接管 | `Floodgate detected, service registered.` |
+| 多服务配置 | `Add a authentication service with id 1 and name LittleSkin.` / `id 2 and name Official.` |
+| 正版分支登录 | `PUEH_erhu(uuid: 318d2d9a-...) from authentication service Official(sid: 2) has been authenticated, profile redirected to ...` → `-> lobby has connected` |
+| 外置分支登录 | `erhu_8848(uuid: cf5af002-...) from authentication service LittleSkin(sid: 1) has been authenticated, profile redirected to ...` → `-> lobby has connected` |
+| 后端转发 | `[server connection] xxx -> lobby has connected` |
+
+> 首次有新客户端版本进服时，可能被 `§c请重新链接服务器` 踢一次——那是聊天会话包版本
+> 探测（`NewChatSessionPacketIDEvent`）在记录包 ID，**每个客户端版本只发生一次**，
+> 重连即正常。上面 LittleSkin 那条就没有再被踢。
+
 ## 六、已知限制 / 下次升级 Velocity 时要看什么
 
 1. **唯一的结构性风险点仍然是 `MultiInitialLoginSessionHandler.init()`**。
