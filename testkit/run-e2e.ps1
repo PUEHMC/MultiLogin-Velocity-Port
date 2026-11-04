@@ -1,19 +1,22 @@
 #requires -version 5.1
 <#
 .SYNOPSIS
-    MultiLogin x Velocity 端到端登录验证脚本。
+    End-to-end login test for MultiLogin on Velocity.
 
 .DESCRIPTION
-    1. 启动本地假 Yggdrasil（对 hasJoined 返回固定档案）
-    2. 启动一台真实的 Velocity 测试代理，加载构建出来的 MultiLogin
-    3. 用 LoginProbe 模拟 Minecraft 客户端完成一整套登录握手
-    4. 断言代理返回的 LoginSuccess 里的 UUID/名字符合预期
+    1. Starts a fake Yggdrasil (returns a fixed profile from /session/minecraft/hasJoined)
+    2. Starts a real Velocity proxy with the plugin under test
+    3. Runs LoginProbe, a minimal Minecraft client that performs the full login handshake
+    4. Asserts the UUID/name carried by LoginSuccess
+
+    NOTE: keep this file pure ASCII. Windows PowerShell 5.1 decodes BOM-less files as
+    ANSI/GBK, and non-ASCII comments then break the parser. Chinese docs live in PORTING.md.
 
 .PARAMETER Jar
-    要测试的 MultiLogin 插件 jar 路径
+    Path to the MultiLogin plugin jar under test.
 
 .EXAMPLE
-    .\testkit\run-e2e.ps1 -Jar .\velocity\build\libs\MultiLogin-Velocity-xxx.jar
+    .\testkit\run-e2e.ps1 -Jar .\dist\MultiLogin-Velocity-3.5.1.jar -ServerDir .\run\velocity-3.5.1
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Jar,
@@ -23,7 +26,12 @@ param(
     [string]$Username = 'TestPlayer',
     [string]$ExpectedUuid = '11111111-2222-3333-4444-555555555555',
     [int]$Protocol = 767,
-    [string]$JavaHome = 'D:\jdk21_azlu'
+    [string]$JavaHome = 'D:\jdk21_azlu',
+    # Comma separated path prefixes; a hit makes the fake Yggdrasil answer 204.
+    # Used to verify multi-service fallback and the OFFICIAL code path.
+    [string]$DenyPaths = '',
+    # When set, overrides the player name returned by the fake Yggdrasil.
+    [string]$ForcedName = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,13 +43,13 @@ $classes = Join-Path $root 'testkit\classes'
 $logDir = Join-Path $root 'run\logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
-if (-not (Test-Path $Jar)) { throw "找不到插件 jar: $Jar" }
-if (-not (Test-Path $java)) { throw "找不到 java: $java" }
+if (-not (Test-Path $Jar)) { throw "Plugin jar not found: $Jar" }
+if (-not (Test-Path $java)) { throw "java not found: $java" }
 if (-not (Test-Path (Join-Path $classes 'LoginProbe.class'))) {
-    throw "测试工具尚未编译，请先执行: javac -encoding UTF-8 -d testkit\classes testkit\*.java"
+    throw "Test kit is not compiled. Run: javac -encoding UTF-8 -d testkit\classes testkit\*.java"
 }
 
-# 清理插件目录里旧版本的 jar，避免重复加载
+# Drop any previous plugin jar so the proxy cannot pick up a stale build.
 Get-ChildItem (Join-Path $serverDir 'plugins') -Filter '*.jar' -ErrorAction SilentlyContinue | Remove-Item -Force
 Copy-Item $Jar (Join-Path $serverDir 'plugins') -Force
 
@@ -53,14 +61,19 @@ $ygg = $null
 $proxy = $null
 $result = 1
 try {
-    Write-Host "==> 启动假 Yggdrasil (127.0.0.1:$YggPort)"
-    $ygg = Start-Process -FilePath $java -ArgumentList @(
+    Write-Host "==> starting fake Yggdrasil (127.0.0.1:$YggPort)"
+    # Start-Process rejects empty strings in -ArgumentList, so "-" is used as an empty placeholder.
+    $denyArg = if ([string]::IsNullOrEmpty($DenyPaths)) { '-' } else { $DenyPaths }
+    $nameArg = if ([string]::IsNullOrEmpty($ForcedName)) { '-' } else { $ForcedName }
+    $yggArgs = @(
         '-cp', $classes, 'FakeYggdrasil', "$YggPort",
-        $ExpectedUuid.Replace('-', ''), $Username
-    ) -RedirectStandardOutput $yggLog -RedirectStandardError "$yggLog.err" -PassThru -WindowStyle Hidden
+        $ExpectedUuid.Replace('-', ''), $Username, $denyArg, $nameArg
+    )
+    $ygg = Start-Process -FilePath $java -ArgumentList $yggArgs `
+        -RedirectStandardOutput $yggLog -RedirectStandardError "$yggLog.err" -PassThru -WindowStyle Hidden
     Start-Sleep -Seconds 2
 
-    Write-Host "==> 启动 Velocity 测试代理 (127.0.0.1:$ProxyPort)"
+    Write-Host "==> starting Velocity (127.0.0.1:$ProxyPort)"
     $proxy = Start-Process -FilePath $java -ArgumentList @('-jar', 'velocity.jar') -WorkingDirectory $serverDir `
         -RedirectStandardOutput $proxyLog -RedirectStandardError "$proxyLog.err" -PassThru -WindowStyle Hidden
 
@@ -68,23 +81,23 @@ try {
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 1
         if ((Test-Path $proxyLog) -and ((Get-Content $proxyLog -Raw -ErrorAction SilentlyContinue) -match 'Listening on|Done \(')) { break }
-        if ($proxy.HasExited) { throw "Velocity 提前退出，退出码 $($proxy.ExitCode)" }
+        if ($proxy.HasExited) { throw "Velocity exited early, code $($proxy.ExitCode)" }
     }
-    if ($proxy.HasExited) { throw "Velocity 提前退出，退出码 $($proxy.ExitCode)" }
+    if ($proxy.HasExited) { throw "Velocity exited early, code $($proxy.ExitCode)" }
     Start-Sleep -Seconds 2
 
-    Write-Host "==> 执行登录探测 (protocol=$Protocol user=$Username)"
+    Write-Host "==> running login probe (protocol=$Protocol user=$Username)"
     & $java -cp $classes LoginProbe $ProxyPort $Protocol $Username $ExpectedUuid
     $result = $LASTEXITCODE
 } finally {
     Write-Host ""
-    Write-Host "===== Velocity 日志（关键行） ====="
+    Write-Host "===== Velocity log (key lines) ====="
     if (Test-Path $proxyLog) {
         Get-Content $proxyLog | Select-String -Pattern 'multilogin|MultiLogin|ERROR|Exception|Listening|Done \(' |
             Select-Object -Last 60 | ForEach-Object { $_.Line }
     }
     Write-Host ""
-    Write-Host "===== 假 Yggdrasil 日志 ====="
+    Write-Host "===== fake Yggdrasil log ====="
     if (Test-Path $yggLog) { Get-Content $yggLog | Select-Object -Last 20 }
 
     foreach ($p in @($proxy, $ygg)) {

@@ -119,21 +119,22 @@ $env:JAVA_HOME = 'D:\JDK25'
 
 | 文件 | 作用 |
 |---|---|
-| `FakeYggdrasil.java` | 本地假 Yggdrasil，`/session/minecraft/hasJoined` 返回固定档案 |
+| `FakeYggdrasil.java` | 本地假 Yggdrasil，`/session/minecraft/hasJoined` 返回固定档案；支持按路径前缀返回 204（模拟"查无此人"），用于验证多服务回退和 OFFICIAL 分支 |
 | `LoginProbe.java` | 手写 Minecraft 客户端: Handshake → LoginStart → RSA/AES 握手 → SetCompression → LoginSuccess |
-| `run-e2e.ps1` | 起假 Yggdrasil + 起真实 Velocity + 跑 LoginProbe + 断言 UUID/名字 |
+| `run-e2e.ps1` | Windows:起假 Yggdrasil + 起真实 Velocity + 跑 LoginProbe + 断言 UUID/名字 |
+| `run-e2e.sh` | Linux/macOS:同上（等价实现，适合在真实服务器上跑） |
 
 ```powershell
-# 1) 编译测试工具
+# Windows
 javac -encoding UTF-8 -d testkit\classes testkit\FakeYggdrasil.java testkit\LoginProbe.java
-
-# 2) 端到端验证（3.5.1）
 .\testkit\run-e2e.ps1 -Jar .\dist\MultiLogin-Velocity-3.5.1.jar `
     -ServerDir .\run\velocity-3.5.1 -ProxyPort 25588 -JavaHome D:\JDK25
+```
 
-# 3) 端到端验证（4.3.1）
-.\testkit\run-e2e.ps1 -Jar .\dist\MultiLogin-Velocity-4.3.1.jar `
-    -ServerDir .\run\velocity-4.3.1 -ProxyPort 25589 -JavaHome D:\JDK25
+```bash
+# Linux / macOS
+javac -encoding UTF-8 -d testkit/classes testkit/FakeYggdrasil.java testkit/LoginProbe.java
+./testkit/run-e2e.sh --jar dist/MultiLogin-Velocity-3.5.1.jar --server-dir run/velocity-3.5.1
 ```
 
 验证通过时输出:
@@ -144,17 +145,79 @@ javac -encoding UTF-8 -d testkit\classes testkit\FakeYggdrasil.java testkit\Logi
 ==> E2E RESULT: PASS
 ```
 
-已实际跑通的场景:
+已实际跑通的场景（每一次都是完整握手走完、拿到 `LoginSuccess`）:
 
-- Velocity **3.5.1** + 外置 Yggdrasil 登录 → `LoginSuccess` 的 UUID/名字正确
-- Velocity **4.3.1** + 外置 Yggdrasil 登录 → 同上
-- 同一玩家**二次登录**（走数据库已有档案分支）→ 通过
-- 服务端开启 `whitelist: true` → 正确以"没有白名单权限"踢出
+| 场景 | 结果 |
+|---|---|
+| Velocity **3.5.1** + CUSTOM_YGGDRASIL 登录 | PASS |
+| Velocity **4.3.1** + CUSTOM_YGGDRASIL 登录 | PASS |
+| Velocity **4.3.2-SNAPSHOT**（最新快照）+ CUSTOM_YGGDRASIL 登录 | PASS |
+| Velocity **4.3.1** + 双服务（CUSTOM 返回 204 / **OFFICIAL 命中**） | PASS，日志确认走的是 `Official(sid: 2)` |
+| 同一玩家**二次登录**（走数据库已有档案分支） | PASS |
+| 服务端开启 `whitelist: true` | 正确以"没有白名单权限"踢出 |
 
 > 日志里出现的 `java.net.SocketException: Connection reset` 是探针拿到 `LoginSuccess`
 > 之后主动断开导致的，不是故障。
 
-## 五、已知限制 / 下次升级 Velocity 时要看什么
+## 五、在真实服务器上验收（强烈建议）
+
+本地测试环境是干净的，覆盖不到 Floodgate / LuckPerms / SkinsRestorer / MySQL 的组合。
+最终验收请在真实机器上开一台**临时 Velocity 实例**——独立目录、独立端口，不要碰生产。
+
+```bash
+# 1) 拉一份官方 Velocity（示例 3.5.1；4.x 同理，但必须 Java 25）
+mkdir -p /opt/mltest && cd /opt/mltest
+curl -sL -o velocity.jar "$(curl -s 'https://fill.papermc.io/v3/projects/velocity/versions/3.5.1/builds/latest' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["downloads"]["server:default"]["url"])')"
+
+# 2) 先空跑一次，让它生成 velocity.toml / forwarding.secret，然后 Ctrl-C
+java -jar velocity.jar
+```
+
+改 `velocity.toml` 三处（其余保持默认即可）:
+
+```toml
+bind = "0.0.0.0:25599"                        # 别和生产的 25565 撞
+online-mode = true
+player-info-forwarding-mode = "modern"
+
+[servers]
+lobby = "127.0.0.1:25566"                     # 随便填，登录流程用不到
+```
+
+```bash
+# 3) 放插件；把生产的 services/*.yml 复制过来
+#    但 config.yml 里的 sql.backend 改成 H2，避免往生产库写测试数据
+mkdir -p plugins/MultiLogin/services
+cp MultiLogin-Velocity-3.5.1.jar plugins/
+cp /path/to/prod/plugins/MultiLogin/services/*.yml plugins/MultiLogin/services/
+
+# 4) 起服
+java -jar velocity.jar
+```
+
+**验收判据（日志级，不需要客户端）:**
+
+```
+[multilogin]: Loaded, using MultiLogin v0.6.13 on Velocity - 3.5.1
+[multilogin]: [DEBUG] Resolved AuthSessionHandler constructor: AuthSessionHandler(VelocityServer, LoginInboundConnection, GameProfile, boolean, String)
+[multilogin]: Added N authentication services.
+```
+
+第一行说明插件加载，第二行（需要 `debug: true`）说明**注入绑定成功**，第三行说明配置读到了。
+只要没有 `MultiLogin failed to initialize and is now DISABLED`，注入层就是好的。
+
+**验收判据（真实客户端）:** 用真实账号连 `25599`，日志应出现
+
+```
+[multilogin]: <name>(uuid: ...) from authentication service <服务名>(sid: N) has been authenticated, profile redirected to ...
+```
+
+> 临时实例可以不接后端子服:登录成功后代理连不上 lobby 会把玩家踢掉，但 `LoginSuccess`
+> 已经发出来了，上面这行日志一定会有。想完整走一遍就用测试工具:
+> `./testkit/run-e2e.sh --jar dist/MultiLogin-Velocity-3.5.1.jar --server-dir /opt/mltest`
+
+## 六、已知限制 / 下次升级 Velocity 时要看什么
 
 1. **唯一的结构性风险点仍然是 `MultiInitialLoginSessionHandler.init()`**。
    它反射的东西包括:
