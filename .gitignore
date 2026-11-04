@@ -24,8 +24,10 @@ fabric/.gradle/
 !/velocity/libraries/README.md
 /velocity/libraries/Velocity/
 
-# local build references (downloaded Velocity artifacts / sources)
+# 本地构建/验证用的大体积产物（可由脚本重新生成，不入库）
 /refs/
-
-/libs/velocity-compile-*.jar
-
+/libs/
+/dist/
+/testkit/classes/
+/testkit/default-velocity.toml
+*.log

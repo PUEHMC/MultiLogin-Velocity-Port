@@ -1,5 +1,6 @@
 package moe.caa.multilogin.core.auth.service.yggdrasil;
 
+import moe.caa.multilogin.api.internal.logger.LoggerProvider;
 import moe.caa.multilogin.api.profile.GameProfile;
 import moe.caa.multilogin.api.internal.util.Pair;
 import moe.caa.multilogin.core.configuration.service.yggdrasil.BaseYggdrasilServiceConfig;
@@ -77,6 +78,10 @@ public class YggdrasilAuthenticationFlows extends BaseFlows<HasJoinedContext> {
     public Signal run(HasJoinedContext hasJoinedContext) {
         try {
             GameProfile call = call();
+            LoggerProvider.getLogger().debug(String.format(
+                    "hasJoined of service %d(%s) returned %s",
+                    config.getId(), config.getName(), call
+            ));
             if (call != null && call.getId() != null) {
                 hasJoinedContext.getResponse().set(new Pair<>(call, (config)));
                 return Signal.PASSED;

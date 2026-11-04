@@ -22,21 +22,24 @@ dependencies {
     implementation project(":flows")
     implementation project(":loader")
 
-    compileOnly 'io.netty:netty-all:4.1.86.Final'
-    compileOnly 'net.minecrell:terminalconsoleappender:1.3.0'
-    compileOnly 'com.velocitypowered:velocity-api:3.4.0-SNAPSHOT'
-    compileOnly 'com.velocitypowered:velocity-proxy:3.4.0-SNAPSHOT'
+    // Velocity 本体（含 api / proxy / netty / adventure / guava 等），由根项目的
+    // prepareVelocityDist 任务按 velocity_version 拉取官方发行包。
+    compileOnly files(rootProject.ext.velocityDistFile)
+}
+
+tasks.named('compileJava') {
+    dependsOn rootProject.tasks.named('prepareVelocityDist')
 }
 
 
 shadowJar {
     archiveBaseName.set('MultiLogin-Velocity')
 
-    if (System.getProperty("env", "AUTO") == "final") {
-        archiveVersion.set(project.plugin_version as String)
+    def buildEnv = (project.findProperty("env") ?: System.getProperty("env", "AUTO")).toString().toLowerCase()
+    if (buildEnv == "final") {
+        archiveVersion.set((project.findProperty("plugin_version") ?: project.plugin_version) as String)
     } else {
-        String ver = "Build_" + version
-        archiveVersion.set(ver)
+        archiveVersion.set("Build_" + version)
     }
     archiveClassifier.set("")
     from {

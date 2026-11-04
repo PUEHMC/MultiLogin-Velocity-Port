@@ -4,6 +4,7 @@ import com.google.common.primitives.Longs;
 import com.velocitypowered.api.proxy.crypto.IdentifiedKey;
 import com.velocitypowered.proxy.VelocityServer;
 import com.velocitypowered.proxy.connection.MinecraftConnection;
+import com.velocitypowered.proxy.connection.MinecraftSessionHandler;
 import com.velocitypowered.proxy.connection.client.AuthSessionHandler;
 import com.velocitypowered.proxy.connection.client.InitialLoginSessionHandler;
 import com.velocitypowered.proxy.connection.client.LoginInboundConnection;
@@ -26,11 +27,16 @@ import net.kyori.adventure.text.Component;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -56,7 +62,13 @@ public class MultiInitialLoginSessionHandler {
     private static MethodHandle getInboundField;
     private static MethodHandle getMcConnectionField;
     private static MethodHandle getCurrentStateField;
-    private static MethodHandle authSessionHandler_allArgsConstructor;
+    /**
+     * AuthSessionHandler 的构造器。
+     * <p>Velocity 3.4.x: {@code (VelocityServer, LoginInboundConnection, GameProfile, boolean)}</p>
+     * <p>Velocity 3.5.x / 4.x: {@code (VelocityServer, LoginInboundConnection, GameProfile, boolean, String serverIdHash)}</p>
+     * <p>因此这里不再写死参数个数，而是按“前四个参数固定、其余参数按类型兜底”的方式解析。</p>
+     */
+    private static Constructor<?> authSessionHandlerConstructor;
     // 类体常量
     private final InitialLoginSessionHandler initialLoginSessionHandler;
     private final MultiCoreAPI multiCoreAPI; // 这个不是
@@ -127,14 +139,85 @@ public class MultiInitialLoginSessionHandler {
         ));
 
 
-        authSessionHandler_allArgsConstructor = lookup.unreflectConstructor(ReflectUtil.handleAccessible(
-                AuthSessionHandler.class.getDeclaredConstructor(
-                        VelocityServer.class,
-                        LoginInboundConnection.class,
-                        com.velocitypowered.api.util.GameProfile.class,
-                        boolean.class
-                )
+        authSessionHandlerConstructor = resolveAuthSessionHandlerConstructor();
+    }
+
+    /**
+     * 解析 {@code AuthSessionHandler} 的构造器。
+     * <p>Velocity 在小版本间会往这个构造器尾部追加参数（例如 3.5.0 追加了 {@code String serverIdHash}，
+     * 用于 {@code LoginEvent} 的 server id），旧代码写死四参数签名会直接抛
+     * {@code NoSuchMethodException} 并连带关掉整个代理。这里改成模糊匹配:</p>
+     * <ol>
+     *     <li>前四个参数必须是 (VelocityServer, LoginInboundConnection, GameProfile, boolean)</li>
+     *     <li>尾部的额外参数按类型填入默认值（String 填 serverId，boolean 填 true，数值填 0，其余 null）</li>
+     * </ol>
+     */
+    private static Constructor<?> resolveAuthSessionHandlerConstructor() throws NoSuchMethodException {
+        List<Constructor<?>> matched = new ArrayList<>();
+        StringBuilder dump = new StringBuilder();
+        for (Constructor<?> constructor : AuthSessionHandler.class.getDeclaredConstructors()) {
+            Class<?>[] types = constructor.getParameterTypes();
+            dump.append("\n  - AuthSessionHandler(");
+            for (int i = 0; i < types.length; i++) {
+                if (i > 0) dump.append(", ");
+                dump.append(types[i].getSimpleName());
+            }
+            dump.append(')');
+
+            if (types.length < 4) continue;
+            if (!types[0].isAssignableFrom(VelocityServer.class)) continue;
+            if (!types[1].isAssignableFrom(LoginInboundConnection.class)) continue;
+            if (!types[2].isAssignableFrom(com.velocitypowered.api.util.GameProfile.class)) continue;
+            if (types[3] != boolean.class && types[3] != Boolean.class) continue;
+            matched.add(constructor);
+        }
+
+        if (matched.isEmpty()) {
+            throw new NoSuchMethodException(
+                    "No compatible AuthSessionHandler constructor was found on this Velocity version."
+                            + " Expected (VelocityServer, LoginInboundConnection, GameProfile, boolean, ...)"
+                            + " but the class only declares:" + dump
+            );
+        }
+
+        // 参数少的优先（更贴近旧 API）；同数量时取声明顺序靠前的那个
+        matched.sort(Comparator.comparingInt(Constructor::getParameterCount));
+        Constructor<?> chosen = ReflectUtil.handleAccessible(matched.get(0));
+        LoggerProvider.getLogger().debug(String.format(
+                "Resolved AuthSessionHandler constructor: AuthSessionHandler(%s)",
+                Arrays.stream(chosen.getParameterTypes()).map(Class::getSimpleName).collect(Collectors.joining(", "))
         ));
+        return chosen;
+    }
+
+    /**
+     * 构造一个 {@code AuthSessionHandler} 实例，兼容不同 Velocity 版本的构造器参数个数。
+     */
+    private static Object newAuthSessionHandler(VelocityServer server, LoginInboundConnection inbound,
+                                                com.velocitypowered.api.util.GameProfile profile,
+                                                boolean onlineMode, String serverIdHash) throws ReflectiveOperationException {
+        Class<?>[] types = authSessionHandlerConstructor.getParameterTypes();
+        Object[] args = new Object[types.length];
+        args[0] = server;
+        args[1] = inbound;
+        args[2] = profile;
+        args[3] = onlineMode;
+        for (int i = 4; i < types.length; i++) {
+            Class<?> type = types[i];
+            if (type == String.class || type == CharSequence.class) {
+                // Velocity 3.5+: serverIdHash，会原样传给 LoginEvent
+                args[i] = serverIdHash;
+            } else if (type == boolean.class || type == Boolean.class) {
+                args[i] = Boolean.TRUE;
+            } else if (type == int.class || type == Integer.class) {
+                args[i] = 0;
+            } else if (type == long.class || type == Long.class) {
+                args[i] = 0L;
+            } else {
+                args[i] = null;
+            }
+        }
+        return authSessionHandlerConstructor.newInstance(args);
     }
 
     private void initValues() throws Throwable {
@@ -217,8 +300,8 @@ public class MultiInitialLoginSessionHandler {
                             mcConnection.getChannel().eventLoop().submit(() -> {
                                 try {
                                     this.mcConnection.setActiveSessionHandler(StateRegistry.LOGIN,
-                                            (AuthSessionHandler) authSessionHandler_allArgsConstructor.invoke(
-                                                    this.server, inbound, generateGameProfile(finalGameProfile), true
+                                            (MinecraftSessionHandler) newAuthSessionHandler(
+                                                    this.server, inbound, generateGameProfile(finalGameProfile), true, serverId
                                             ));
                                 } catch (Throwable e) {
                                     throw new RuntimeException(e);

@@ -2,10 +2,8 @@ import groovy.json.JsonOutput
 import org.apache.tools.ant.filters.ReplaceTokens
 import java.text.SimpleDateFormat
 
-
-plugins {
-    id 'org.jetbrains.kotlin.jvm' version '1.8.0' apply false
-}
+// 注意: 项目里没有任何 Kotlin 源码，原先声明的 org.jetbrains.kotlin.jvm 插件
+// 只会额外拉取一份 kotlin-gradle-plugin，纯属构建负担，已移除。
 
 apply from: './constant.gradle'
 
@@ -71,9 +69,10 @@ subprojects {
         }
 
         def ver;
-        def env = System.getProperty("env", "AUTO").toLowerCase()
+        // 允许用 -Penv=final 指定正式构建（比 -Denv 可靠: -D 不一定会传给 Gradle daemon）
+        def env = (project.findProperty("env") ?: System.getProperty("env", "AUTO")).toString().toLowerCase()
         if (env == "final") {
-            ver = (project.plugin_version as String)
+            ver = (project.findProperty("plugin_version") ?: project.plugin_version) as String
         } else {
             ver = "Build_" + version
         }
@@ -107,6 +106,50 @@ subprojects {
 
     compileJava {
         sourceCompatibility = targetCompatibility = JavaVersion.VERSION_21
+    }
+}
+
+// ============================================================================
+//  Velocity 编译基线
+//
+//  上游 MultiLogin 依赖的 com.velocitypowered:velocity-proxy 已经不再发布到
+//  PaperMC 的 maven 仓库，导致原仓库在当前环境下根本无法重新编译。
+//  这里改为直接使用 PaperMC 官方发行的 Velocity 完整发行包作为 compileOnly 依赖，
+//  通过 -Pvelocity_version=<ver> 或 gradle.properties 里的 velocity_version 切换目标版本。
+// ============================================================================
+
+def _velocityVersion = (findProperty('velocity_version') ?: '3.5.1').toString()
+def _velocityDistFile = new File(rootDir, "libs/velocity-${_velocityVersion}.jar")
+ext.velocityVersion = _velocityVersion
+ext.velocityDistFile = _velocityDistFile
+
+tasks.register('prepareVelocityDist') {
+    group = 'velocity'
+    description = 'Download the Velocity distribution jar used as compile-only dependency.'
+    // 注意: 闭包里不能直接写 ext.xxx（那是 Task 自己的 extra properties），必须用外部变量
+    outputs.file(_velocityDistFile)
+    doLast {
+        def target = _velocityDistFile
+        if (target.exists() && target.length() > 0) {
+            return
+        }
+        target.parentFile.mkdirs()
+        def api = "https://fill.papermc.io/v3/projects/velocity/versions/${_velocityVersion}/builds/latest"
+        println "Resolving Velocity ${_velocityVersion} from ${api}"
+        def meta = new groovy.json.JsonSlurper().parse(new URL(api).openStream())
+        def download = meta.downloads['server:default']
+        println "Downloading ${download.url}"
+        new URL(download.url).withInputStream { input ->
+            target.withOutputStream { output -> output << input }
+        }
+        def expected = download.checksums.sha256
+        def actual = java.security.MessageDigest.getInstance('SHA-256')
+                .digest(target.bytes).encodeHex().toString()
+        if (expected && !expected.equalsIgnoreCase(actual)) {
+            target.delete()
+            throw new GradleException("Velocity distribution digest mismatch: expected ${expected}, got ${actual}")
+        }
+        println "Saved ${target} (${target.length()} bytes)"
     }
 }
 

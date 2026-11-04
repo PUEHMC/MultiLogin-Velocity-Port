@@ -95,6 +95,8 @@ public class YggdrasilAuthenticationService {
 
         final HasJoinedContext context = new HasJoinedContext(username, serverId, ip);
         final Signal run = flows.run(context);
+        LoggerProvider.getLogger().debug(String.format(
+                "hasJoined group result is %s, unavailable services: %d", run, context.getServiceUnavailable().size()));
         if (run == Signal.PASSED) {
             return YggdrasilAuthenticationResult.ofAllowed(
                     context.getResponse().get().getValue1(),

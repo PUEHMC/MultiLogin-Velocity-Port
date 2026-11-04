@@ -1,3 +1,13 @@
+pluginManagement {
+    repositories {
+        // 国内网络访问 plugins.gradle.org 很慢，优先走阿里云镜像
+        maven { url = 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url = 'https://maven.aliyun.com/repository/public' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
 rootProject.name = 'MultiLogin'
 
 include 'api'
@@ -14,4 +24,3 @@ include 'velocity:injector'
 //
 //include 'bukkit'
 //include 'bukkit:injector'
-

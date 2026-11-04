@@ -60,9 +60,25 @@ public class MultiLoginVelocity implements IPlugin {
         try {
             pluginLoader.load("MultiLogin-Velocity-Injector.JarFile");
         } catch (Exception e) {
-            LoggerProvider.getLogger().error("An exception was encountered while initializing the plugin.", e);
-            server.shutdown();
+            // 注意: 这里绝对不要调用 server.shutdown()。
+            // 插件初始化失败不应该把整个代理带走——代理保持存活，至少正版直连/其它插件还能工作，
+            // 管理员也有机会看到日志去修配置，而不是整个群组瞬间掉线。
+            failFast("An exception was encountered while initializing the plugin.", e);
         }
+    }
+
+    /**
+     * 插件进入"降级模式": 只打印醒目错误并停止接管登录，但保持代理继续运行。
+     */
+    private void failFast(String message, Throwable throwable) {
+        LoggerProvider.getLogger().error("======================================================");
+        LoggerProvider.getLogger().error("MultiLogin failed to initialize and is now DISABLED.");
+        LoggerProvider.getLogger().error("The proxy keeps running, but external/Yggdrasil logins will NOT work.");
+        LoggerProvider.getLogger().error("This usually means MultiLogin does not support this Velocity build yet.");
+        LoggerProvider.getLogger().error("Velocity: " + runServer.getVersion());
+        LoggerProvider.getLogger().error("======================================================");
+        LoggerProvider.getLogger().error(message, throwable);
+        multiCoreAPI = null;
     }
 
     @Subscribe
@@ -74,8 +90,7 @@ public class MultiLoginVelocity implements IPlugin {
             injector.inject(multiCoreAPI);
             injector.registerChatSession(multiCoreAPI.getMapperConfig().getPacketMapping());
         } catch (Throwable e) {
-            LoggerProvider.getLogger().error("An exception was encountered while loading the plugin.", e);
-            server.shutdown();
+            failFast("An exception was encountered while loading the plugin.", e);
             return;
         }
         new GlobalListener(this).register();
@@ -113,13 +128,14 @@ public class MultiLoginVelocity implements IPlugin {
     @Subscribe
     public void onDisable(ProxyShutdownEvent event) {
         try {
-            multiCoreAPI.close();
+            if (multiCoreAPI != null) {
+                multiCoreAPI.close();
+            }
             pluginLoader.close();
         } catch (Exception e) {
             LoggerProvider.getLogger().error("An exception was encountered while close the plugin", e);
         } finally {
             multiCoreAPI = null;
-            server.shutdown();
         }
     }
 

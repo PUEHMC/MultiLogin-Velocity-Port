@@ -22,13 +22,12 @@ dependencies {
     compileOnly project(":core")
     compileOnly project(":velocity")
 
-    compileOnly 'io.netty:netty-all:4.1.86.Final'
-    compileOnly 'net.minecrell:terminalconsoleappender:1.3.0'
-    compileOnly 'com.velocitypowered:velocity-api:3.4.0-SNAPSHOT'
-    annotationProcessor 'com.velocitypowered:velocity-api:3.4.0-SNAPSHOT'
+    // Velocity 本体（含 api / proxy / netty / adventure / guava 等）
+    compileOnly files(rootProject.ext.velocityDistFile)
+}
 
-    
-    compileOnly 'com.velocitypowered:velocity-proxy:3.4.0-SNAPSHOT'
+tasks.named('compileJava') {
+    dependsOn rootProject.tasks.named('prepareVelocityDist')
 }
 
 shadowJar {
