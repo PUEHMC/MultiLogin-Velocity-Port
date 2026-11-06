@@ -66,6 +66,9 @@ java.lang.NoSuchMethodException:
 | **3.5.x** | [MultiLogin-Velocity-3.5.1.jar](https://pan.pueh.cn/f/LpXFN/MultiLogin-Velocity-3.5.1.jar) | `4f846b983612960c1b6ab4f4378dad24c49143289292412433701a97ee42c236` |
 | **4.x（含 4.3.1）** | [MultiLogin-Velocity-4.3.1.jar](https://pan.pueh.cn/f/LpXFN/MultiLogin-Velocity-4.3.1.jar) | `ac0323cad9fd91c81e4a80b47fefe00ec92428c00d07ef58d83bc2a571e609fa` |
 
+备用下载（GitHub Releases，国内可能较慢）：
+<https://github.com/gerhu/MultiLogin-Velocity-Port/releases/latest>
+
 下载后建议核对一下，防止传输损坏：
 
 ```bash
