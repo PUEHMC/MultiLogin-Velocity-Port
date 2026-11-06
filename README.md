@@ -74,15 +74,6 @@ javac -encoding UTF-8 -d testkit\classes testkit\FakeYggdrasil.java testkit\Logi
 
 详见 [PORTING.md](PORTING.md)。
 
-## BUG 汇报
-
-[Weekly Ver](https://github.com/CaaMoe/MultiLogin/releases/tag/weekly) 点击此处，也许你遇到的问题已修复
-
-[832210691](https://jq.qq.com/?_wv=1027&k=WrOTGIC7) 点击此处，来加入QQ交流群
-
-[new issue](https://github.com/CaaMoe/MultiLogin/issues/new) 点击此处，提交你的问题
-
-[Discord](https://discord.gg/HJXHCZRS) 进来聊聊你的问题
 ## 贡献者
 
 <a href="https://github.com/CaaMoe/MultiLogin/graphs/contributors">
