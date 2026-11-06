@@ -199,8 +199,8 @@ A：可以，源码见下。用 `-Pvelocity_version=` 指定目标版本即可�
 
 按 GPL v3 要求，**修改版必须提供对应源代码**。任选一种即可：
 
-- **方式 A（推荐）**：把源码推到公开仓库，在这里写地址
-  `https://github.com/<你的账号>/MultiLogin`
+- **方式 A（推荐）**：源码仓库
+  <https://github.com/gerhu/MultiLogin-Velocity-Port>
 - **方式 B**：直接提供源码包下载（与 jar 放在同一个网盘目录）
   [MultiLogin-velocity-port-src-0.6.13.zip](https://pan.pueh.cn/f/LpXFN/MultiLogin-velocity-port-src-0.6.13.zip)
   `sha256: d3eb4a0ec16946cb99695be100d7289b7745057d8ede08b9d72cb394ed41e55f`
