@@ -55,7 +55,7 @@
 ## 许可
 
 GPL-3.0，基于 [CaaMoe/MultiLogin](https://github.com/CaaMoe/MultiLogin) v6 修改。
-对应源码：https://github.com/gerhu/MultiLogin-Velocity-Port
+对应源码：https://github.com/PUEHMC/MultiLogin-Velocity-Port
 
 ## SHA-256
 

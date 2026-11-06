@@ -67,7 +67,7 @@ java.lang.NoSuchMethodException:
 | **4.x（含 4.3.1）** | [MultiLogin-Velocity-4.3.1.jar](https://pan.pueh.cn/f/LpXFN/MultiLogin-Velocity-4.3.1.jar) | `ac0323cad9fd91c81e4a80b47fefe00ec92428c00d07ef58d83bc2a571e609fa` |
 
 备用下载（GitHub Releases，国内可能较慢）：
-<https://github.com/gerhu/MultiLogin-Velocity-Port/releases/latest>
+<https://github.com/PUEHMC/MultiLogin-Velocity-Port/releases/latest>
 
 下载后建议核对一下，防止传输损坏：
 
@@ -203,7 +203,7 @@ A：可以，源码见下。用 `-Pvelocity_version=` 指定目标版本即可�
 按 GPL v3 要求，**修改版必须提供对应源代码**。任选一种即可：
 
 - **方式 A（推荐）**：源码仓库
-  <https://github.com/gerhu/MultiLogin-Velocity-Port>
+  <https://github.com/PUEHMC/MultiLogin-Velocity-Port>
 - **方式 B**：直接提供源码包下载（与 jar 放在同一个网盘目录）
   [MultiLogin-velocity-port-src-0.6.13.zip](https://pan.pueh.cn/f/LpXFN/MultiLogin-velocity-port-src-0.6.13.zip)
   `sha256: d3eb4a0ec16946cb99695be100d7289b7745057d8ede08b9d72cb394ed41e55f`
